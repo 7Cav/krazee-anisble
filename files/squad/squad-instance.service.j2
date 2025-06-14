@@ -1,0 +1,17 @@
+[Unit]
+Description=Squad Instance {{ item.key }}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=squad
+Group=squad
+Restart=always
+RestartSec=30
+ExecStart=/bin/bash /opt/squad/{{ item.key }}/start
+KillSignal=SIGINT
+TimeoutSec=30
+#LogNamespace=squadserver
+
+[Install]
+WantedBy=multi-user.target

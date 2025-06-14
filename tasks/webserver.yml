@@ -1,0 +1,65 @@
+---
+# webserver is used for:
+# - control panel
+# - squad RemoteAdminList
+- name: install webserver
+  apt:
+    pkg:
+      - apache2
+      - libapache2-mod-fcgid
+  notify:
+    - webRestart
+
+- name: Enable apache mods
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - proxy_fcgi
+    - rewrite
+    - expires
+    - headers
+    - deflate
+    - dir
+    - ssl
+  notify:
+    - webRestart
+
+- name: Enable php8.3-fpm Apache config using symlink
+  file:
+    src: /etc/apache2/conf-available/php8.3-fpm.conf
+    dest: /etc/apache2/conf-enabled/php8.3-fpm.conf
+    state: link
+  notify:
+    - webRestart
+
+- name: /etc/apache2/sites-available/000-default.conf
+  template:
+    src: files/etc/000-default.conf.j2
+    dest: /etc/apache2/sites-available/000-default.conf
+  notify:
+    - webRestart
+
+- name: appRootPath
+  file:
+    path: "/var/www/html"
+    state: directory
+    owner: squad
+    group: squad
+    recurse: true
+
+- name: certbot
+  apt:
+    pkg:
+      - certbot
+
+- name: start/enable apache2.service
+  systemd:
+    enabled: true
+    state: started
+    name: apache2.service
+
+- name: enable certbot.timer
+  systemd:
+    enabled: true
+    name: certbot.timer

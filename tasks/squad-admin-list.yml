@@ -1,0 +1,33 @@
+---
+- name: Copy /usr/local/bin/squad-admin-list-generator
+  copy:
+    src: files/squad-admin-list/squad-admin-list-generator
+    dest: /usr/local/bin/squad-admin-list-generator
+    mode: 0700
+    owner: root
+    group: root
+- name: Copy /opt/squad/squad-admin-list-generator-config.yml
+  template:
+    src: files/squad-admin-list/squad-admin-list-generator-config.yml.default.j2
+    dest: /opt/squad/squad-admin-list-generator-config.yml
+    mode: 0644
+    owner: squad
+    group: squad
+    force: no # only create the file, do not overwrite
+- name: Copy /etc/systemd/system/squad-admin-list-generator.service
+  copy:
+    src: files/squad-admin-list/squad-admin-list-generator.service
+    dest: /etc/systemd/system/squad-admin-list-generator.service
+  notify:
+    - systemdReload
+- name: Copy /etc/systemd/system/squad-admin-list-generator.timer
+  copy:
+    src: files/squad-admin-list/squad-admin-list-generator.timer
+    dest: /etc/systemd/system/squad-admin-list-generator.timer
+  notify:
+    - systemdReload
+- name: enable squad-admin-list-generator.timer
+  systemd:
+    enabled: true
+    state: started
+    name: squad-admin-list-generator.timer

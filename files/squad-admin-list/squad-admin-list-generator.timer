@@ -1,0 +1,9 @@
+[Unit]
+Description=Automatically generate squad admin config
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

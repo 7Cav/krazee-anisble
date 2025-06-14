@@ -1,0 +1,39 @@
+- name: Copy /etc/apt/apt.conf.d/52unattended-upgrades-local
+  copy:
+    src: files/etc/52unattended-upgrades-local
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    mode: 0644
+    owner: root
+    group: root
+
+- name: Copy reboot-if-squad-servers-are-empty script
+  template:
+    src: files/usr-local-bin/reboot-if-squad-servers-are-empty.j2
+    dest: /usr/local/bin/reboot-if-squad-servers-are-empty
+    mode: 0755
+    owner: root
+    group: root
+  vars:
+    instances: "{{ squad.instances | dict2items }}"
+
+
+- name: Copy systemd auto reboot service files
+  template:
+    src: files/etc/auto-update-reboot.service.j2
+    dest: /etc/systemd/system/auto-update-reboot.service
+  notify:
+    - systemdReload
+
+- name: Copy systemd auto reboot timer files
+  template:
+    src: files/etc/auto-update-reboot.timer.j2
+    dest: /etc/systemd/system/auto-update-reboot.timer
+  notify:
+    - systemdReload
+    # TODO restart timers
+
+- name: enable systemd restart timer
+  systemd:
+    enabled: true
+    state: started
+    name: auto-update-reboot.timer

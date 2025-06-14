@@ -1,0 +1,33 @@
+---
+- name: Create /opt/rcon
+  file:
+    path: /opt/rcon
+    state: directory
+    mode: 0755
+    group: root
+    owner: root
+
+- name: Download rcon-cli tarball
+  get_url:
+    url: "https://github.com/gorcon/rcon-cli/releases/download/v0.10.3/rcon-0.10.3-amd64_linux.tar.gz"
+    dest: "/tmp/rcon-cli.tar.gz"
+    mode: 0644
+  register: rconclitar
+
+- name: Check that the rcon-cli tarball exists
+  stat:
+    path: "/tmp/rcon-cli.tar.gz"
+  register: rconclitarexists
+
+- name: Extract rcon-cli binary
+  unarchive:
+    src: "/tmp/rcon-cli.tar.gz"
+    dest: "/opt/rcon"
+    remote_src: yes
+  when: rconclitar.changed and rconclitarexists.stat.exists
+
+- name: link rcon
+  file:
+    src: "/opt/rcon/rcon-0.10.3-amd64_linux/rcon"
+    dest: "/usr/local/bin/rcon"
+    state: link

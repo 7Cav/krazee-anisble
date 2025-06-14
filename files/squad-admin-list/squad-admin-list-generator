@@ -1,0 +1,332 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+ini_set("display_errors", 1);
+error_reporting(E_ALL);
+
+$args = getopt("", ["config:"]);
+$configFileName = $args["config"] ?? __DIR__ . "/squad-admin-list-generator-config.yml";
+if (!file_exists($configFileName)) {
+    throw new Exception("Config file does not exist (use --config <path>)");
+}
+$config = yaml_parse_file($configFileName);
+
+new class(
+    $config["cavApiKey"],
+    $config["companiesInAO"],
+    $config["gameIdGoogleSheet"],
+    $config["servers"],
+) {
+    /**
+     * @var Member[]
+     */
+    private array $members;
+    /**
+     * @var PositionGroup[]
+     */
+    private array $positionGroups;
+
+    public function __construct(
+        private readonly string $cavApiKey,
+        private readonly array  $companiesInAO,
+        array                   $gameIdGoogleSheet,
+        array                   $servers,
+    )
+    {
+        $this->fetchPositions();
+        $this->fetchMembers($this->getGameIds($gameIdGoogleSheet["spreadsheetId"], $gameIdGoogleSheet["sheetName"]));
+        foreach ($servers as $name => $config) {
+            $this->createAdminListFile($name, $config);
+        }
+    }
+
+    private function createAdminListFile($serverName, $config): void
+    {
+        $adminBilletsByPositionId = [
+            ...$this->getAdminPositionsForBillets((array)$config["adminsByBillet"]),
+            ...$this->getAdminPositionsForCompanySectionLeaders($this->companiesInAO),
+        ];
+        foreach ($this->members as $member) {
+            $this->addMemberToAdminArray($config["roles"], $adminBilletsByPositionId, $member);
+        }
+        $lines = [
+            "// AUTO GENERATED FILE - DO NOT EDIT",
+            "// $serverName",
+            "// Updated: " . date("Y-m-d H:i:s"),
+            "",
+        ];
+        foreach ($config["roles"] as $role => $roleData) {
+            // Group=Moderator:changemap,chat,kick,ban,cameraman,pause,featuretest,cheat
+            $lines[] = sprintf("Group=%s:%s", $role, $roleData["permissions"]);
+        }
+        $lines[] = "";
+        foreach ($adminBilletsByPositionId as $admins) {
+            $lines[] = str_repeat("/", 60);
+            $lines[] = "//// " . $admins["position"]->title;
+            foreach ($admins["members"] as ["member" => $member, "alreadyHasAdmin" => $alreadyHasAdmin]) {
+                $lines[] = $this->getAdminConfigString($member, $admins["adminRole"], $alreadyHasAdmin, $config["adminWithoutSacRole"]);
+            }
+            $lines[] = "";
+        }
+        // if ($additionalAdminMembers) {
+        //     $lines[] = str_repeat("/", 60);
+        //     $lines[] = "//// Additional Admins";
+        //     foreach ($additionalAdminMembers as $member) {
+        //         $lines[] = $this->getAdminConfigString($member, "Moderator");
+        //     }
+        // }
+        file_put_contents($config["outputFile"], implode("\r\n", $lines));
+        // foreach($config["outputFiles"] as $file) {
+        //     file_put_contents($file, implode("\r\n", $lines));
+        // }
+    }
+
+    private function getAdminConfigString(Member $member, string $adminRole, ?string $alreadyHasAdmin = null, ?string $adminWithoutSacRole = null): string
+    {
+        $comments = [];
+        $enabled = $alreadyHasAdmin === null;
+        if (!$member->hasSac) {
+            $comments[] = "Missing SAC";
+            if (!$adminWithoutSacRole) {
+                $enabled = false;
+            } else {
+                $adminRole = $adminWithoutSacRole;
+            }
+        }
+        if (!$member->steamId) {
+            $enabled = false;
+            $comments[] = "Missing steamId";
+        }
+        if ($member->hasSac && $member->steamId && $alreadyHasAdmin) {
+            $comments[] = $alreadyHasAdmin;
+        }
+        $str = sprintf(
+            "Admin=%s:%s // %s.%s",
+            $member->steamId,
+            $adminRole,
+            $member->rankShort,
+            $member->username,
+        );
+        if ($comments) {
+            $str .= " (" . implode(", ", $comments) . ")";
+        }
+        return $enabled ? $str : "// $str";
+    }
+
+    private function addMemberToAdminArray(array $roles, array &$adminBilletsByPositionId, Member $member): void
+    {
+        $permissions = [];
+        foreach ($member->positionIdsWithPrefix as $positionId) {
+            if (array_key_exists($positionId, $adminBilletsByPositionId)) {
+                $role = $adminBilletsByPositionId[$positionId]["adminRole"];
+                $permissions[] = [
+                    "positionId" => $positionId,
+                    "positionTitle" => $adminBilletsByPositionId[$positionId]["position"]->title,
+                    "adminRole" => $role,
+                    "sort" => $roles[$role]["sort"],
+                ];
+            }
+        }
+        usort($permissions, fn($a, $b) => $a["sort"] <=> $b["sort"]);
+        foreach ($permissions as $i => $permission) {
+            $positionId = $permission["positionId"];
+            $adminBilletsByPositionId[$positionId]["members"][] = [
+                "member" => $member,
+                // only enable the highest admin permission per member
+                "alreadyHasAdmin" => $i > 0 ? sprintf("%s through %s", $permissions[0]["adminRole"], $permissions[0]["positionTitle"]) : null,
+            ];
+        }
+    }
+
+    private function getAdminPositionsForCompanySectionLeaders(array $automaticSectionLeaderAdminForCompanyNames): array
+    {
+        $titles = [
+            "Commanding Officer" => "Admin", // Battalion
+            "Executive Officer" => "Admin",// Battalion or Company
+            "Sergeant Major" => "Admin", // Battalion
+            "Commander" => "Admin", // Company
+            //"Executive Officer" => "Admin", // Company
+            "First Sergeant" => "Admin", // Company
+            "Platoon Leader" => "Admin", // Platoon
+            "Platoon Sergeant" => "Admin", // Platoon
+            "Section Leader" => "Moderator", // Section
+            "Assistant Section Leader" => "Moderator", // Section
+        ];
+        $adminBilletsByPositionId = [];
+        foreach ($this->positionGroups as $group) {
+            if (in_array($group->title, $automaticSectionLeaderAdminForCompanyNames)) {
+                foreach ($group->positions as $position) {
+                    foreach ($titles as $title => $role) {
+                        if (str_contains($position->title, $title)) {
+                            $adminBilletsByPositionId[$position->idWithPrefix] = [
+                                "position" => $position,
+                                "adminRole" => $role,
+                                "members" => [],
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+        return $adminBilletsByPositionId;
+    }
+
+    private function getAdminPositionsForBillets(array $manualAdminBillets): array
+    {
+        $adminPositions = [];
+        foreach ($this->positionGroups as $group) {
+            foreach ($group->positions as $position) {
+                if (array_key_exists($position->title, $manualAdminBillets)) {
+                    // prefix key with p to force keys to be string (avoids issues of key's being reassigned during array operations)
+                    $adminPositions[$position->idWithPrefix] = [
+                        "position" => $position,
+                        "adminRole" => $manualAdminBillets[$position->title],
+                        "members" => [],
+                    ];
+                    unset($manualAdminBillets[$position->title]);
+                }
+            }
+        }
+        if (count($manualAdminBillets) > 0) {
+            throw new Exception("Manual billets not found in milpac: " . implode(", ", array_keys($manualAdminBillets)));
+        }
+        return $adminPositions;
+    }
+
+    // private function getAllPositionsInCompanies(array $companies): array
+    // {
+    //     $positions = [];
+    //     foreach ($this->positionGroups as $group) {
+    //         if (in_array($group->title, $companies)) {
+    //             foreach ($group->positions as $position) {
+    //                 $positions[$position->idWithPrefix] = $position;
+    //             }
+    //         }
+    //     }
+    //     return $positions;
+    // }
+
+    private function fetchMembers($gameIdsByUserName): void
+    {
+        $members = [
+            ...array_values((array)($this->curlRequest("https://api.7cav.us/api/v1/roster/ROSTER_TYPE_COMBAT", true, $this->cavApiKey)->profiles)),
+            ...array_values((array)($this->curlRequest("https://api.7cav.us/api/v1/roster/ROSTER_TYPE_RESERVE", true, $this->cavApiKey)->profiles)),
+            ...array_values((array)($this->curlRequest("https://api.7cav.us/api/v1/roster/ROSTER_TYPE_ELOA", true, $this->cavApiKey)->profiles)),
+        ];
+        $this->members = [];
+        foreach ($members as $member) {
+            $hasSac = false;
+            foreach ($member->records as $record) {
+                if ($record->recordType === "RECORD_TYPE_GRADUATION" && str_contains(strtolower($record->recordDetails), "server administration course")) {
+                    $hasSac = true;
+                    break;
+                }
+            }
+            $this->members[] = new Member(
+                $member->user->username,
+                $member->rank->rankShort,
+                $gameIdsByUserName[$member->user->username]["steamId"] ?? "",
+                $gameIdsByUserName[$member->user->username]["eosId"] ?? "",
+                $hasSac,
+                [
+                    // prefix key with p to force keys to be string (avoids issues of key's being reassigned during array operations)
+                    "p{$member->primary->positionId}",
+                    ...array_map(fn($position) => "p{$position->positionId}", $member->secondaries),
+                ]
+            );
+        }
+    }
+
+    private function getGameIds(string $spreadsheetId, string $sheetName): array
+    {
+        $gameIdsByUserName = [];
+        $response = $this->curlRequest("https://docs.google.com/spreadsheets/d/$spreadsheetId/export?format=csv&sheet=$sheetName");
+        foreach (explode("\n", $response) as $rowStr) {
+            $row = str_getcsv($rowStr);
+            if (!empty($row[0]) && $row[0] !== "Name") {
+                $gameIdsByUserName[trim((string)$row[0])] = [
+                    'eosId' => trim((string)$row[1]),
+                    'steamId' => trim((string)$row[2]),
+                ];
+            }
+        }
+        return $gameIdsByUserName;
+    }
+
+    private function fetchPositions(): void
+    {
+        $this->positionGroups = [];
+        foreach ($this->curlRequest("https://api.7cav.us/api/v1/milpacs/position/groups", true, $this->cavApiKey)->groups as $group) {
+            $this->positionGroups[] = new PositionGroup(
+                $group->groupTitle,
+                // prefix id with p to force keys to be string (avoids issues of key's being reassigned during array operations)
+                array_map(fn($position) => new Position("p{$position->positionId}", $position->positionTitle), $group->positions),
+            );
+        }
+    }
+
+    private function curlRequest(string $url, bool $getJson = false, ?string $authorization = null): mixed
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array_filter([
+            $getJson ? 'Accept: application/json' : null,
+            $authorization ? "Authorization: {$authorization}" : null,
+        ]));
+        $response = curl_exec($ch);
+        if (curl_errno($ch)) {
+            throw new Exception("cURL error: " . curl_error($ch));
+        }
+        curl_close($ch);
+        sleep(1);
+        if ($getJson) {
+            try {
+                return json_decode($response, false, 512, JSON_THROW_ON_ERROR);
+            } catch (Exception $e) {
+                throw new Exception("{$e->getMessage()} / url: $url / response content: $response");
+            }
+        }
+        return $response;
+    }
+};
+
+class Member
+{
+    public function __construct(
+        public string $username,
+        public string $rankShort,
+        public string $steamId,
+        public string $eosId,
+        public bool   $hasSac,
+        public array  $positionIdsWithPrefix,
+    )
+    {
+    }
+}
+
+class PositionGroup
+{
+    public function __construct(
+        public string $title,
+        /**
+         * @var Position[]
+         */
+        public array  $positions,
+    )
+    {
+    }
+}
+
+class Position
+{
+    public function __construct(
+        public string $idWithPrefix,
+        public string $title,
+    )
+    {
+    }
+}

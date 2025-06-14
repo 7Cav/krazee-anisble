@@ -1,0 +1,7 @@
+[Unit]
+Description=Reboot the host if needed and all squad server are empty
+ConditionFileNotEmpty=/var/run/reboot-required
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/reboot-if-squad-servers-are-empty

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+true \
+{% for instance in instances %}
+  && squadctl --name "{{ instance.key }}" --action isEmpty --quiet \
+{% endfor %}
+  && echo "all servers empty - rebooting" \
+  && reboot \
+  || echo "not all servers are empty, skipping reboot"

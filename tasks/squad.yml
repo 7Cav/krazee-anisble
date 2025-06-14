@@ -1,0 +1,93 @@
+---
+- name: Create /opt/squad
+  file:
+    path: /opt/squad
+    state: directory
+    mode: 0755
+    group: squad
+    owner: squad
+
+- name: Create /opt/squad instance folders
+  file:
+    path: "/opt/squad/{{ item.key }}"
+    state: directory
+    mode: 0755
+    group: squad
+    owner: squad
+  loop: "{{ squad.instances | dict2items }}"
+
+- name: Copy squad start scripts
+  template:
+    src: files/squad/squad-start.j2
+    dest: "/opt/squad/{{ item.key }}/start"
+    mode: 0700
+    owner: squad
+    group: squad
+  loop: "{{ squad.instances | dict2items }}"
+
+- name: Copy squad rcon scripts
+  template:
+    src: files/squad/squad-rcon.j2
+    dest: "/opt/squad/{{ item.key }}/rcon"
+    mode: 0755
+    owner: squad
+    group: squad
+  loop: "{{ squad.instances | dict2items }}"
+
+
+- name: Copy /usr/local/bin/squadctl
+  copy:
+    src: files/usr-local-bin/squadctl
+    dest: /usr/local/bin/squadctl
+    mode: 0755
+    owner: squad
+    group: squad
+
+- name: Copy squad config.json if it does not exists
+  copy:
+    src: files/squad/server-config.json
+    dest: "/opt/squad/{{ item.key }}/config.json"
+    mode: 0644
+    owner: squad
+    group: squad
+    force: no
+  loop: "{{ squad.instances | dict2items }}"
+
+
+- name: Copy squad systemd service files
+  template:
+    src: files/squad/squad-instance.service.j2
+    dest: /etc/systemd/system/squad-{{ item.key }}.service
+  loop: "{{ squad.instances | dict2items }}"
+  notify:
+    - systemdReload
+
+- name: Copy squad systemd restart service files
+  template:
+    src: files/squad/squad-restart.service.j2
+    dest: /etc/systemd/system/squad-restart-{{ item.key }}.service
+  loop: "{{ squad.instances | dict2items }}"
+  notify:
+    - systemdReload
+
+- name: Copy squad systemd restart timer files
+  template:
+    src: files/squad/squad-restart.timer.j2
+    dest: /etc/systemd/system/squad-restart-{{ item.key }}.timer
+  loop: "{{ squad.instances | dict2items }}"
+  notify:
+    - systemdReload
+    # TODO restart timers
+
+#- name: enable systemd restart timer
+#  systemd:
+#    enabled: true
+#    name: squad-{{ item.key }}.service
+#  loop: "{{ squad.instances | dict2items }}"
+#
+#- name: enable & start systemd restart timer
+#  systemd:
+#    enabled: true
+#    state: started
+#    name: squad-restart-{{ item.key }}.timer
+#  loop: "{{ squad.instances | dict2items }}"

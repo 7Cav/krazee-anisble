@@ -1,0 +1,119 @@
+# WARNING: This is a YAML configuration file.
+# Spaces are significant in YAML. Indentation must be consistent. Incorrect use of spaces or tabs will cause errors.
+# ------------------------------------------------------------------------------
+#
+cavApiKey: {{ cavApiKey }}
+# all ASL/SL/PSG/PL/1SG/SGM/XO/CO with a position in the listed companies (position groups in the api) will be granted the Moderator/Admin role if they have SAC and the sectionLeaderWithoutSacRole otherwise
+companiesInAO:
+  - "3-7 Command"
+  - A/3-7
+  - B/3-7
+  - C/3-7
+gameIdGoogleSheet:
+  spreadsheetId: {{ gameIdGoogleSheet.spreadsheetId }}
+  sheetName: {{ gameIdGoogleSheet.sheetName }}
+servers:
+  trainingServer:
+    outputFile: /var/www/html/public/SquadAdminsGeneratedTraining.cfg
+      #outputFile: /opt/squad/SquadAdminsGeneratedTraining.cfg
+    # if adminWithoutSacRole is set, an admin without SAC is given the following role, if left empty they will not get any admin permissions
+    adminWithoutSacRole: NoSacSectionLeaders
+    roles:
+      SuperAdmin:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest,reserve,balance,private,config,debug
+        sort: 10
+      Admin:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest,reserve,balance
+        sort: 20
+      Moderator:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest
+        sort: 30
+      NoSacSectionLeaders:
+        permissions: changemap,chat,cameraman,featuretest
+        sort: 30
+    # all members of billets listed in adminsByBillet will be granted the specified role
+    adminsByBillet:
+      S3 1IC: Admin
+      S3 2IC: Admin
+      S3 Squad Operations Staff: Moderator
+      S3 Squad Operations Senior: Moderator
+      S3 Squad Operations Lead: SuperAdmin
+      S6 1IC: SuperAdmin
+      S6 2IC: SuperAdmin
+      S6 Game/Forum Lead: Admin
+      S6 DevOps Lead: Moderator
+      S6 Senior Development Staff: Moderator
+      S6 Development Staff: Moderator
+      S6 Development Staff IT: Moderator
+      S6 Senior Operations Staff: Moderator
+      S6 Operations Staff: Moderator
+      S6 Operations Staff IT: Moderator
+      S6 Senior Game Staff: Moderator
+      S6 Game Staff: Admin
+      S6 Game Staff IT: Admin
+      MP 1IC: Admin
+      MP 2IC: Admin
+      MP Lead Administrator: Admin
+      MP Senior Administrator: Admin
+      MP Administrator: Admin
+      MP Administrator IT: Admin
+      S7 1IC: Admin
+      S7 2IC: Admin
+      S7 Squad CAS Lead Instructor: Moderator
+      S7 Squad CAS Instructor: Moderator
+      S7 Squad CAS Instructor IT: Moderator
+      S7 Squad CAS Senior Instructor: Moderator
+      RTC 1IC: Admin
+      RTC 2IC: Admin
+      'RTC Lead Drill Instructor - Squad': Admin
+      'RTC Senior Drill Instructor - Squad': Admin
+      'RTC Drill Instructor - Squad': Admin
+      'RTC Drill Instructor IT - Squad': Admin
+      Auxiliary Executive Officer: Admin
+      Auxiliary Commander: Admin
+      Auxiliary Sergeant Major: Admin
+  publicServer:
+    #outputFile: SquadAdminsGeneratedPublic.cfg
+    outputFile: /var/www/html/public/SquadAdminsGeneratedPublic.cfg
+      #outputFile: /opt/squad/SquadAdminsGeneratedPublic.cfg
+    # if adminWithoutSacRole is set, an admin without SAC is given the following role, if left empty they will not get any admin permissions
+    adminWithoutSacRole:
+    roles:
+      SuperAdmin:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest,reserve,balance,private,config,debug
+        sort: 10
+      Admin:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest,reserve,balance
+        sort: 20
+      Moderator:
+        permissions: changemap,cheat,chat,kick,ban,cameraman,pause,featuretest
+        sort: 30
+    # all members of billets listed in adminsByBillet will be granted the specified role
+    adminsByBillet:
+      S3 1IC: Admin
+      S3 2IC: Admin
+      S3 Squad Operations Staff: Moderator
+      S3 Squad Operations Senior: Moderator
+      S3 Squad Operations Lead: Moderator
+      S6 1IC: SuperAdmin
+      S6 2IC: SuperAdmin
+      S6 Game/Forum Lead: Admin
+      S6 DevOps Lead: Moderator
+      S6 Senior Development Staff: Moderator
+      S6 Development Staff: Moderator
+      S6 Development Staff IT: Moderator
+      S6 Senior Operations Staff: Moderator
+      S6 Operations Staff: Moderator
+      S6 Operations Staff IT: Moderator
+      S6 Senior Game Staff: Moderator
+      S6 Game Staff: Admin
+      S6 Game Staff IT: Admin
+      MP 1IC: Admin
+      MP 2IC: Admin
+      MP Lead Administrator: Admin
+      MP Senior Administrator: Admin
+      MP Administrator: Admin
+      MP Administrator IT: Admin
+      Auxiliary Executive Officer: Admin
+      Auxiliary Commander: Admin
+      Auxiliary Sergeant Major: Admin

@@ -1,0 +1,19 @@
+- name: Add i386 architecture
+  ansible.builtin.command: dpkg --add-architecture i386
+  become: true
+  changed_when: false
+
+- name: Update package lists
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true
+
+#- name: dpkg --add-architecture i386
+#  lineinfile:
+#    dest: /var/lib/dpkg/arch
+#    line: "i386"
+#  register: dpkg_add_i386
+#- name: update apt cache for architecture
+#  apt:
+#    update_cache: yes
+#  when: dpkg_add_i386 is changed

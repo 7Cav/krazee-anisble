@@ -1,0 +1,394 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+ini_set("display_errors", 1);
+error_reporting(E_ALL);
+ob_implicit_flush(true);
+
+define("CURRENT_USER", exec("whoami"));
+
+$args = getopt("", ["quiet", "name:", "action:"]);
+foreach ($args as &$val) {
+    // parameters without value like --quiet will contain the value false, switch that to true to be more intuitive
+    $val = $val === false ? true : $val;
+}
+$serverName = preg_replace("/[^a-zA-Z0-9]/", "", ($args["name"] ?? ""));
+$action = preg_replace("/[^a-zA-Z0-9]/", "", ($args["action"] ?? ""));
+$quiet = $args["quiet"] ?? false;
+unset($args["name"], $args["action"], $args["quiet"]);
+
+new class($serverName, $quiet, $action, $args) {
+    private string $serverBasePath;
+
+    public function __construct(
+        private readonly string $serverName,
+        private readonly bool   $quiet,
+        string                  $action,
+        array                   $args
+    )
+    {
+        try {
+            if (!$serverName) {
+                throw new Exception("--name is a required parameter");
+            }
+            if (!$action) {
+                $possibleActions = array_map(fn($method) => substr($method, 0, -6), array_filter(get_class_methods($this), fn($method) => str_ends_with($method, 'Action')));
+                throw new Exception("--action is a required parameter. possible values: " . implode(", ", $possibleActions));
+            }
+            $basePath = "/opt/squad";
+            $this->serverBasePath = "$basePath/{$this->serverName}";
+            if (!file_exists("$this->serverBasePath/config.json")) {
+                throw new Exception("Server does not exist, config file '{$this->serverBasePath}/config.json' not found");
+            }
+            $method = "{$action}Action";
+            if (!method_exists($this, $method)) {
+                throw new Exception(sprintf('Action "%s" not supported', $action));
+            }
+            $this->{$method}($args);
+        } catch (\Throwable $e) {
+            $this->stderr($e->getMessage());
+            exit(1);
+        }
+    }
+
+    public function updateAndRestartIfEmptyAction()
+    {
+        $wasRunning = $this->isServerActive();
+        if ($wasRunning) {
+            $this->stopIfEmptyAction();
+        }
+        $this->updateAction();
+        if ($wasRunning) {
+            $this->startAction();
+        }
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function updateAction(): void
+    {
+        if ($this->isServerActive()) {
+            throw new Exception("server cannot be updated while running");
+        }
+        $configPath = "{$this->serverBasePath}/config.json";
+        $modPath = "{$this->serverBasePath}/SquadGame/Plugins/Mods";
+        $downloadPath = "{$this->serverBasePath}/steamapps/workshop/content/393380";
+        $config = json_decode(file_get_contents($configPath), false, 512, JSON_THROW_ON_ERROR);
+        // $steamCmd = realpath("$basePath/steamcmd/steamcmd.exe");
+        $steamCmd = realpath("/usr/games/steamcmd");
+        if (!file_exists($steamCmd)) {
+            throw new Exception("$steamCmd not found");
+        }
+        $_mods = $config->mods ?? null;
+        if (!is_array($_mods)) {
+            throw new Exception("missing key 'mods' in $configPath");
+        }
+        // resolve dependencies for selected mods
+        $mods = array_unique($this->resolveMods($_mods));
+        // Download game and workshop items via steamcmd
+        //      403240 is the steam game id of the squad server
+        //      393380 is the steam game id of the squad game client which has all the mods
+        $this->exec(sprintf(
+            "%s +force_install_dir %s +login anonymous +app_update 403240 validate +quit",
+            $steamCmd,
+            realpath($this->serverBasePath),
+        ), "squad", true, true);
+        foreach ($mods as $modId) {
+            for ($i = 0; $i < 5; $i++) {
+                try {
+                    $this->exec(sprintf(
+                        "%s +force_install_dir %s +login anonymous +workshop_download_item 393380 %s validate +quit",
+                        $steamCmd,
+                        realpath($this->serverBasePath),
+                        $modId,
+                    ), "squad", true, true, false, true);
+                    break;
+                } catch (Exception $e) {
+                }
+            }
+        };
+
+        // remove all mods (symlinks in modPath)
+        $this->exec(sprintf('sh -c \'cd %s; find "%s" -type l -exec rm {} \;\'', $this->serverBasePath, $modPath), "squad", true, true);
+
+        // put new mods into place
+        foreach ($this->collectModFolders($downloadPath, $mods) as $modInfo) {
+            $this->exec(sprintf('ln -s %s %s/', $this->getModSourceFolderPath($modInfo), $modPath), "squad", true, true);
+        }
+    }
+
+    protected function getModSourceFolderPath(object $modInfo): string
+    {
+        if (in_array($modInfo->modId, [
+            3014073690, // GlobalEscalation
+            3349114724, // Squad44Factions
+            3364638076, // Project44 highlight map (Utah Beach)
+        ])) {
+            $modsFixedPath = "{$this->serverBasePath}/mods-fixed/{$modInfo->modId}";
+            if (!is_dir($modsFixedPath)) {
+                $this->exec("mkdir -p -m 775 {$modsFixedPath}", "squad", true, true);
+            }
+            $this->exec("rsync -rlptDP --delete $modInfo->path $modsFixedPath", "squad", true, true);
+            $modsFixedPath2 = "$modsFixedPath/{$modInfo->modName}";
+            $windowsPaksFolder = "$modsFixedPath2/Content/Paks/WindowsNoEditor";
+            $linuxPaksFolder = "$modsFixedPath2/Content/Paks/LinuxServer";
+            $tmpPaksFolder = "$modsFixedPath2/Content/Paks/tmp";
+            if (is_dir($linuxPaksFolder)) {
+                $this->exec("mv $linuxPaksFolder $tmpPaksFolder", "squad", true, true);
+            }
+            $this->exec("mkdir -m 775 $linuxPaksFolder", "squad", true, true);
+            foreach (scandir($windowsPaksFolder) as $pakFile) {
+                if (!str_starts_with($pakFile, ".")) {
+                    $newPakFile = str_replace("-WindowsNoEditor.pak", "-LinuxServer.pak", $pakFile);
+                    $this->exec("mv $windowsPaksFolder/$pakFile $linuxPaksFolder/$newPakFile", "squad", true, true);
+                }
+            }
+            if (is_dir($tmpPaksFolder)) {
+                foreach (scandir($tmpPaksFolder) as $pakFile) {
+                    if (!str_starts_with($pakFile, ".")) {
+                        $newPakFile = str_replace("-LinuxServer.pak", "-WindowsNoEditor.pak", $pakFile);
+                        $this->exec("mv $tmpPaksFolder/$pakFile $windowsPaksFolder/$newPakFile", "squad", true, true);
+                    }
+                }
+                $this->exec("rm -r $tmpPaksFolder", "squad", true, true);
+            }
+            return $modsFixedPath2;
+        }
+        return $modInfo->path;
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function isActiveAction(): void
+    {
+        if ($this->isServerActive()) {
+            $this->stdout("started");
+        } else {
+            throw new Exception("stopped");
+        }
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function isEmptyAction(): void
+    {
+        if ($this->isServerEmpty()) {
+            $this->stdout("empty");
+        } else {
+            throw new Exception("has players");
+        }
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function statusAction(): void
+    {
+        $this->stdout($this->isServerActive() ? "started" : "stopped");
+        $this->stdout($this->isServerEmpty() ? "empty" : "has players");
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function restartIfEmptyAction(): void
+    {
+        if (!$this->isServerActive()) {
+            throw new Exception("server not running");
+        }
+        if ($this->isServerEmpty()) {
+            $this->stdout("restarting server");
+            $this->exec(sprintf("/bin/systemctl restart squad-%s.service", $this->serverName), true);
+        } else {
+            throw new Exception("aborting restart, server has players");
+        }
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function restartAction(): void
+    {
+        if (!$this->isServerActive()) {
+            throw new Exception("server not running");
+        }
+        $this->stdout("restarting server");
+        $this->exec(sprintf("/bin/systemctl restart squad-%s.service", $this->serverName), true);
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function startAction(): void
+    {
+        if ($this->isServerActive()) {
+            throw new Exception("server is already running");
+        }
+        $this->stdout("starting server");
+        $this->exec(sprintf("/bin/systemctl start squad-%s.service", $this->serverName), true);
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function stopAction(): void
+    {
+        if (!$this->isServerActive()) {
+            throw new Exception("server not running");
+        }
+        $this->stdout("stopping server");
+        $this->exec(sprintf("/bin/systemctl stop squad-%s.service", $this->serverName), true);
+    }
+
+    /**
+     * @noinspection PhpUnused
+     **/
+    public function stopIfEmptyAction(): void
+    {
+        if (!$this->isServerActive()) {
+            throw new Exception("server not running");
+        }
+        if ($this->isServerEmpty()) {
+            $this->stdout("stopping server");
+            $this->exec(sprintf("/bin/systemctl stop squad-%s.service", $this->serverName), true);
+        } else {
+            throw new Exception("aborting stopping, server has players");
+        }
+    }
+
+    public function isServerActive(): bool
+    {
+        return match ($this->exec(sprintf("/bin/systemctl is-active squad-%s.service", $this->serverName), false, false, false, true)) {
+            "active" => true,
+            "inactive" => false,
+        };
+    }
+
+    public function isServerEmpty(): bool
+    {
+        if (!$this->isServerActive()) {
+            return true;
+        }
+        $arr = json_decode($this->rcon("showserverinfo"), true);
+        $playerCountStr = $arr["PlayerCount_I"] ?? "";
+        if ($playerCountStr === "0") {
+            return true;
+        }
+        return false;
+    }
+
+    private function getModDependencies(int $modId): Generator
+    {
+        $page = file_get_contents("https://steamcommunity.com/sharedfiles/filedetails/?id=$modId");
+        if (preg_match_all('@/filedetails/\?id=(\d*).*?data-subscribed="0"@', $page, $matches)) {
+            foreach ($matches[1] as $match) {
+                yield (int)$match;
+            }
+        }
+    }
+
+    private function resolveMods(array $modIdsToAdd, array $result = []): array
+    {
+        foreach ($modIdsToAdd as $modId) {
+            if (!in_array($modId, $result)) {
+                $result [] = $modId;
+                $result = $this->resolveMods(iterator_to_array($this->getModDependencies($modId)), $result);
+            }
+        }
+        return $result;
+    }
+
+
+    private function collectModFolders(string $downloadPath, array $mods): Generator
+    {
+        if (file_exists($downloadPath) && is_dir($downloadPath)) {
+            foreach ($mods as $modId) {
+                $modSourcePath = "$downloadPath/$modId";
+                if (!file_exists($downloadPath)) {
+                    throw new Exception("Mod not found in download path: " . $modSourcePath);
+                }
+                foreach (scandir($modSourcePath) as $file) {
+                    if ($file[0] === '.') {
+                        continue;
+                    }
+                    $filePath = "$modSourcePath/$file";
+                    if (is_dir($filePath)) {
+                        yield (object)["modName" => $file, "modId" => $modId, "path" => $filePath];
+                    }
+                }
+            }
+        }
+    }
+
+    private function rcon(string $action): string
+    {
+        return $this->exec("{$this->serverBasePath}/rcon $action");
+    }
+
+    private function exec(string $cmd, bool|string $become = false, bool $echoOutput = false, bool $echoCommand = false, bool $ignoreReturnCode = false, bool $throwOnExitCode = false): string
+    {
+        if ($become === true) {
+            $cmd = "sudo $cmd";
+        } elseif (is_string($become) && CURRENT_USER !== $become) {
+            $cmd = "sudo -u $become $cmd";
+        }
+        if ($echoCommand) {
+            $this->stdout("$ $cmd");
+        }
+        $process = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $stdout = "";
+        $stderr = "";
+        if (is_resource($process)) {
+            while ($line = fgets($pipes[1])) {
+                $stdout .= $line;
+                if ($echoOutput) {
+                    $this->stdout($line, false);
+                }
+            }
+            while ($errorLine = fgets($pipes[2])) {
+                $stderr .= $errorLine;
+                $this->stderr($errorLine, false);
+            }
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $return = proc_close($process);
+            if ($return !== 0 && $throwOnExitCode) {
+                throw new Exception($stderr, $return);
+            }
+            if ($return !== 0 && !$ignoreReturnCode) {
+                $this->stderr("\r\nError: Script exited with status: $return\r\n", false);
+            }
+        } else {
+            $this->stderr("\r\nError: Failed to start process\r\n", false);
+        }
+        $this->stderr($stderr);
+        $stdout = trim($stdout);
+        if ($stdout && $echoOutput) {
+            $this->stdout("\r\n", false);
+        }
+        return $stdout;
+    }
+
+    private function stdout(string $str, bool $newLine = true): void
+    {
+        if (!$this->quiet && trim($str)) {
+            $str2 = $newLine ? "\r\n" : "";
+            $str = $newLine ? trim($str) : $str;
+            echo "{$str}{$str2}";
+        }
+    }
+
+    private function stderr(string $str, bool $newLine = true): void
+    {
+        if (trim($str)) {
+            $str2 = $newLine ? "\r\n" : "";
+            $str = $newLine ? trim($str) : $str;
+            file_put_contents('php://stderr', "{$str}{$str2}");
+        }
+    }
+};

@@ -1,0 +1,28 @@
+---
+- name: check if certificate exists
+  stat:
+    path: "{{ LocalSSLCertificateFile }}"
+  register: "certificate_stat"
+- name: Generate an OpenSSL private key
+  community.crypto.openssl_privatekey:
+    path: "{{ LocalSSLCertificateKeyFile }}"
+    size: 4096
+    type: RSA
+    backup: yes
+  when: not certificate_stat.stat.exists
+- name: Generate an OpenSSL Certificate Signing Request
+  community.crypto.openssl_csr:
+    path: "{{ LocalSSLCertificateFile }}.csr"
+    privatekey_path: "{{ LocalSSLCertificateKeyFile }}"
+    country_name: "US"
+    organization_name: "{{ inventory_hostname }}"
+    email_address: ""
+    common_name: "{{ inventory_hostname }}"
+  when: not certificate_stat.stat.exists
+- name: Generate a Self Signed OpenSSL certificate
+  community.crypto.x509_certificate:
+    path: "{{ LocalSSLCertificateFile }}"
+    privatekey_path: "{{ LocalSSLCertificateKeyFile }}"
+    csr_path: "{{ LocalSSLCertificateFile }}.csr"
+    provider: selfsigned
+  when: not certificate_stat.stat.exists

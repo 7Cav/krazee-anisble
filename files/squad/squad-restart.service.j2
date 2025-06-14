@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart squad server {{ item.key }} if empty
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/squadctl --name {{ item.key }} --action updateAndRestartIfEmpty

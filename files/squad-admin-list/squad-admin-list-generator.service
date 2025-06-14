@@ -1,0 +1,6 @@
+[Unit]
+Description=Automatically generate squad admin config
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/squad-admin-list-generator --config /opt/squad/squad-admin-list-generator-config.yml

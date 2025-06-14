@@ -1,0 +1,10 @@
+---
+- name: Set hostname in /etc/hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+- name: Set hostname in /etc/hosts
+  lineinfile:
+    dest: /etc/hosts
+    regexp: '^127\.1\.1\.1'
+    line: "127.1.1.1 {{ inventory_hostname }}"
+    state: present

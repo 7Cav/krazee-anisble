@@ -1,0 +1,19 @@
+---
+- name: Install utilities
+  apt:
+    pkg:
+      - zip
+      - unzip
+      - unrar
+      - speedtest-cli
+      - inxi
+      - jq
+      - rsync
+      - tmux
+      - screen
+      - mtr
+      - fd-find
+      - ripgrep
+      - btop
+      - vim
+      - curl

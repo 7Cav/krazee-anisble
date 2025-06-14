@@ -1,0 +1,61 @@
+---
+- name: Install php
+  apt:
+    pkg:
+      - php-fpm
+      - php-cli
+#      - openssl
+      - php-gd
+      - php-mysql
+#      - php-PDO
+      - php-mbstring
+      - php-tokenizer
+      - php-bcmath
+      - php-xml
+      - php-curl
+      - php-zip
+      - php-imagick
+      - php-intl
+      - php-pgsql
+      - php-sqlite3
+      - php-tidy
+      - php-yaml
+      - composer
+  notify:
+    - webRestart
+
+- name: Remove php (mod_php)
+  apt:
+    pkg:
+      - php
+    state: absent
+
+
+- name: php.ini
+  ini_file:
+    path: "/etc/php/8.3/{{ item.file }}"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  loop:
+    - { file: "fpm/conf.d/10-opcache.ini", section: "", option: "opcache.revalidate_path", value: "1" }
+    - { file: "fpm/php.ini", section: "PHP", option: "memory_limit", value: "512M" }
+    - { file: "fpm/php.ini", section: "Date", option: "date.timezone", value: "UTC" }
+    - { file: "fpm/php.ini", section: "PHP", option: "max_execution_time", value: "360" }
+    - { file: "fpm/php.ini", section: "PHP", option: "display_errors", value: "Off" }
+    - { file: "fpm/php.ini", section: "PHP", option: "expose_php", value: "Off" }
+    - { file: "fpm/php.ini", section: "PHP", option: "upload_max_filesize", value: "2M" }
+    - { file: "cli/php.ini", section: "PHP", option: "memory_limit", value: "512M" }
+    - { file: "cli/php.ini", section: "Date", option: "date.timezone", value: "UTC" }
+    - { file: "cli/php.ini", section: "PHP", option: "max_execution_time", value: "3600" }
+    - { file: "cli/php.ini", section: "PHP", option: "display_errors", value: "On" }
+    - { file: "fpm/pool.d/www.conf", section: "www", option: "user", value: "squad" }
+    - { file: "fpm/pool.d/www.conf", section: "www", option: "group", value: "squad" }
+  notify:
+    - webRestart
+
+- name: start php8.3-fpm.service
+  systemd:
+    enabled: true
+    state: started
+    name: php8.3-fpm.service

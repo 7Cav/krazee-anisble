@@ -1,0 +1,59 @@
+---
+- name: create group sudonopass
+  group:
+    name: sudonopass
+    state: present
+
+- name: create /etc/sudoers.d/sudonopass
+  copy:
+    dest: /etc/sudoers.d/sudonopass
+    content: '%sudonopass ALL=(ALL:ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+
+- name: User root
+  user:
+    name: root
+    password: "!"
+
+#- name: User ubuntu
+#  user:
+#    name: ubuntu
+#    password: "!"
+#    shell: /bin/bash
+
+- name: User squad
+  user:
+    name: squad
+    password: "!"
+    shell: /bin/bash
+
+- name: Create .ssh
+  file:
+    path: "/home/{{ item }}/.ssh"
+    state: directory
+    mode: 0700
+    owner: "{{ item }}"
+    group: "{{ item }}"
+  loop:
+    - ubuntu
+    - squad
+
+- name: Copy .ssh/authorized_keys
+  copy:
+    src: "files/authorized_keys-{{ item }}"
+    dest: "/home/{{ item }}/.ssh/authorized_keys"
+    mode: 0600
+    owner: "{{ item }}"
+    group: "{{ item }}"
+  loop:
+    - ubuntu
+    - squad
+
+- name: /etc/sudoers.d/squad
+  copy:
+    dest: /etc/sudoers.d/squad
+    content: |
+      squad ALL=(ALL) NOPASSWD: /bin/systemctl restart squad-*.service, /bin/systemctl stop squad-*.service, /bin/systemctl start squad-*.service, /bin/systemctl enable squad-*.service, /bin/systemctl disable squad-*.service, /bin/systemctl enable squad-*.timer, /bin/systemctl disable squad-*.timer
+    owner: root
+    group: root
+    mode: 0440

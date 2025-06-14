@@ -1,0 +1,52 @@
+---
+- hosts: gameservers
+  become: true
+  handlers:
+    - name: sshRestart
+      systemd:
+        name: ssh.service
+        state: restarted
+    - name: fail2banRestart
+      systemd:
+        name: fail2ban.service
+        state: restarted
+    - name: systemdReload
+      systemd:
+        daemon_reload: yes
+    - name: webRestart
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - apache2.service
+        - php8.3-fpm.service
+  vars_files:
+    - vault/user.yml
+  vars:
+    LocalSSLCertificateFile: '/etc/ssl/certs/localhost.crt'
+    LocalSSLCertificateKeyFile: '/etc/ssl/private/localhost.key'
+    # SSLCertificateFile: '/etc/ssl/certs/localhost.crt'
+    # SSLCertificateKeyFile: '/etc/ssl/private/localhost.key'
+    SSLCertificateFile: '/etc/letsencrypt/live/krazee.7cav.us/fullchain.pem'
+    SSLCertificateKeyFile: '/etc/letsencrypt/live/krazee.7cav.us/privkey.pem'
+    documentRootPath: '/var/www/html/public'
+  pre_tasks:
+     - name: Update apt cache
+       apt: 
+         update_cache: true 
+         cache_valid_time: 3600
+  tasks:
+    - import_tasks: tasks/utilities.yml
+    - import_tasks: tasks/host.yml
+    - import_tasks: tasks/dpkg.yml
+    - import_tasks: tasks/user.yml
+    - import_tasks: tasks/ssh.yml
+    - import_tasks: tasks/fail2ban.yml
+    - import_tasks: tasks/steamcmd.yml
+    - import_tasks: tasks/php.yml
+    - import_tasks: tasks/rcon.yml
+    - import_tasks: tasks/squad.yml
+    - import_tasks: tasks/squad-admin-list.yml
+    - import_tasks: tasks/updates.yml
+    - import_tasks: tasks/ssl.yml
+    - import_tasks: tasks/webserver.yml

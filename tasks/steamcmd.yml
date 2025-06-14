@@ -1,0 +1,11 @@
+- name: Pre-accept Steam License Agreement
+  debconf:
+    name: "steam"
+    question: "steam/question"
+    value: "I AGREE"
+    vtype: "select"
+- name: Install steamcmd
+  apt:
+    pkg:
+      - lib32gcc-s1
+      - steamcmd
