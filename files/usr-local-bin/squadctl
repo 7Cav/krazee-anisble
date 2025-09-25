@@ -23,15 +23,15 @@ new class($serverName, $quiet, $action, $args) {
     private string $serverBasePath;
 
     public function __construct(
-        private readonly string $serverName,
-        private readonly bool   $quiet,
-        string                  $action,
-        array                   $args
+            private readonly string $serverName,
+            private readonly bool   $quiet,
+            string                  $action,
+            array                   $args,
     )
     {
         try {
             if (!$serverName) {
-                throw new Exception("--name is a required parameter");
+                throw new Exception("--name is a required parameter (example value: training1)");
             }
             if (!$action) {
                 $possibleActions = array_map(fn($method) => substr($method, 0, -6), array_filter(get_class_methods($this), fn($method) => str_ends_with($method, 'Action')));
@@ -75,9 +75,11 @@ new class($serverName, $quiet, $action, $args) {
         }
         $configPath = "{$this->serverBasePath}/config.json";
         $modPath = "{$this->serverBasePath}/SquadGame/Plugins/Mods";
+        if (!file_exists($modPath)) {
+            $this->exec(sprintf('mkdir -p %s', $modPath), "squad", true, true, false, true);
+        }
         $downloadPath = "{$this->serverBasePath}/steamapps/workshop/content/393380";
         $config = json_decode(file_get_contents($configPath), false, 512, JSON_THROW_ON_ERROR);
-        // $steamCmd = realpath("$basePath/steamcmd/steamcmd.exe");
         $steamCmd = realpath("/usr/games/steamcmd");
         if (!file_exists($steamCmd)) {
             throw new Exception("$steamCmd not found");
@@ -92,18 +94,19 @@ new class($serverName, $quiet, $action, $args) {
         //      403240 is the steam game id of the squad server
         //      393380 is the steam game id of the squad game client which has all the mods
         $this->exec(sprintf(
-            "%s +force_install_dir %s +login anonymous +app_update 403240 validate +quit",
-            $steamCmd,
-            realpath($this->serverBasePath),
+                "%s +force_install_dir %s +login anonymous +app_update 403240 validate +quit",
+                $steamCmd,
+                realpath($this->serverBasePath),
         ), "squad", true, true);
         foreach ($mods as $modId) {
+            // downloads for large mods might time out, so we need to fetch mods individually and retry multiple times on failure
             for ($i = 0; $i < 5; $i++) {
                 try {
                     $this->exec(sprintf(
-                        "%s +force_install_dir %s +login anonymous +workshop_download_item 393380 %s validate +quit",
-                        $steamCmd,
-                        realpath($this->serverBasePath),
-                        $modId,
+                            "%s +force_install_dir %s +login anonymous +workshop_download_item 393380 %s validate +quit",
+                            $steamCmd,
+                            realpath($this->serverBasePath),
+                            $modId,
                     ), "squad", true, true, false, true);
                     break;
                 } catch (Exception $e) {
@@ -116,48 +119,8 @@ new class($serverName, $quiet, $action, $args) {
 
         // put new mods into place
         foreach ($this->collectModFolders($downloadPath, $mods) as $modInfo) {
-            $this->exec(sprintf('ln -s %s %s/', $this->getModSourceFolderPath($modInfo), $modPath), "squad", true, true);
+            $this->exec(sprintf('ln -s %s %s', $modInfo->path, $modPath), "squad", true, true);
         }
-    }
-
-    protected function getModSourceFolderPath(object $modInfo): string
-    {
-        if (in_array($modInfo->modId, [
-            3014073690, // GlobalEscalation
-            3349114724, // Squad44Factions
-            3364638076, // Project44 highlight map (Utah Beach)
-        ])) {
-            $modsFixedPath = "{$this->serverBasePath}/mods-fixed/{$modInfo->modId}";
-            if (!is_dir($modsFixedPath)) {
-                $this->exec("mkdir -p -m 775 {$modsFixedPath}", "squad", true, true);
-            }
-            $this->exec("rsync -rlptDP --delete $modInfo->path $modsFixedPath", "squad", true, true);
-            $modsFixedPath2 = "$modsFixedPath/{$modInfo->modName}";
-            $windowsPaksFolder = "$modsFixedPath2/Content/Paks/WindowsNoEditor";
-            $linuxPaksFolder = "$modsFixedPath2/Content/Paks/LinuxServer";
-            $tmpPaksFolder = "$modsFixedPath2/Content/Paks/tmp";
-            if (is_dir($linuxPaksFolder)) {
-                $this->exec("mv $linuxPaksFolder $tmpPaksFolder", "squad", true, true);
-            }
-            $this->exec("mkdir -m 775 $linuxPaksFolder", "squad", true, true);
-            foreach (scandir($windowsPaksFolder) as $pakFile) {
-                if (!str_starts_with($pakFile, ".")) {
-                    $newPakFile = str_replace("-WindowsNoEditor.pak", "-LinuxServer.pak", $pakFile);
-                    $this->exec("mv $windowsPaksFolder/$pakFile $linuxPaksFolder/$newPakFile", "squad", true, true);
-                }
-            }
-            if (is_dir($tmpPaksFolder)) {
-                foreach (scandir($tmpPaksFolder) as $pakFile) {
-                    if (!str_starts_with($pakFile, ".")) {
-                        $newPakFile = str_replace("-LinuxServer.pak", "-WindowsNoEditor.pak", $pakFile);
-                        $this->exec("mv $tmpPaksFolder/$pakFile $windowsPaksFolder/$newPakFile", "squad", true, true);
-                    }
-                }
-                $this->exec("rm -r $tmpPaksFolder", "squad", true, true);
-            }
-            return $modsFixedPath2;
-        }
-        return $modInfo->path;
     }
 
     /**
@@ -309,18 +272,15 @@ new class($serverName, $quiet, $action, $args) {
         if (file_exists($downloadPath) && is_dir($downloadPath)) {
             foreach ($mods as $modId) {
                 $modSourcePath = "$downloadPath/$modId";
-                if (!file_exists($downloadPath)) {
-                    throw new Exception("Mod not found in download path: " . $modSourcePath);
+                if (!file_exists($modSourcePath)) {
+                    throw new Exception("Mod folder $modId not found in download path: " . $modSourcePath);
                 }
-                foreach (scandir($modSourcePath) as $file) {
-                    if ($file[0] === '.') {
-                        continue;
-                    }
-                    $filePath = "$modSourcePath/$file";
-                    if (is_dir($filePath)) {
-                        yield (object)["modName" => $file, "modId" => $modId, "path" => $filePath];
-                    }
+                $pluginFile = glob("$modSourcePath/*.uplugin")[0] ?? "";
+                if (!$pluginFile) {
+                    throw new Exception("No .uplugin file for Mod $modId found in download path: " . $modSourcePath);
                 }
+                $name = substr($pluginFile, strlen($modSourcePath) + 1, -8);
+                yield (object)["modName" => $name, "modId" => $modId, "path" => $modSourcePath];
             }
         }
     }
