@@ -2,8 +2,8 @@ all:
   children:
     gameservers:
       hosts:
-        krazee.7cav.us:
-          ansible_host: krazee.7cav.us
+        kleinman.7cav.us:
+          ansible_host: kleinman.7cav.us
           ansible_user: ubuntu
           squad:
             instances:
@@ -18,40 +18,46 @@ all:
                 queryPort: 27166
                 beaconPort: 15010
                 rconPort: 21124
-                cpuList: 8-11
+                cpuList: 8-9
               training2:
                 gamePort: 7798
                 queryPort: 27167
                 beaconPort: 15011
                 rconPort: 21125
-                cpuList: 8-11
+                cpuList: 10-11
               training3:
                 gamePort: 7799
                 queryPort: 27168
                 beaconPort: 15012
                 rconPort: 21126
-                cpuList: 12-15
+                cpuList: 12-13
               training4:
                 gamePort: 7800
                 queryPort: 27169
                 beaconPort: 15013
                 rconPort: 21127
-                cpuList: 12-15
+                cpuList: 14-15
               class1:
                 gamePort: 7801
                 queryPort: 27170
                 beaconPort: 15014
                 rconPort: 21128
-                cpuList: 12-15
+                cpuList: 24-27
               event1:
                 gamePort: 7802
                 queryPort: 27171
                 beaconPort: 15015
                 rconPort: 21129
                 cpuList: 4-7
-              bootcamp1:
-                gamePort: 7803
-                queryPort: 27172
-                beaconPort: 15016
-                rconPort: 21130
-                cpuList: 8-11
+#              bootcamp1:
+#                gamePort: 7803
+#                queryPort: 27172
+#                beaconPort: 15016
+#                rconPort: 21130
+#                cpuList: 8-11
+              fireteam1:
+                gamePort: 7804
+                queryPort: 27173
+                beaconPort: 15017
+                rconPort: 21131
+                cpuList: 14-15

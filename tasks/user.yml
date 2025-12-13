@@ -1,23 +1,25 @@
 ---
-- name: create group sudonopass
-  group:
-    name: sudonopass
-    state: present
-
-- name: create /etc/sudoers.d/sudonopass
-  copy:
-    dest: /etc/sudoers.d/sudonopass
-    content: '%sudonopass ALL=(ALL:ALL) NOPASSWD: ALL'
-    validate: 'visudo -cf %s'
-
-- name: User root
-  user:
-    name: root
-    password: "!"
-
+#- name: create group sudonopass
+#  group:
+#    name: sudonopass
+#    state: present
+#
+#- name: create /etc/sudoers.d/sudonopass
+#  copy:
+#    dest: /etc/sudoers.d/sudonopass
+#    content: '%sudonopass ALL=(ALL:ALL) NOPASSWD: ALL'
+#    validate: 'visudo -cf %s'
+#
+#- name: User root
+#  user:
+#    name: root
+#    password: "!"
+#
 #- name: User ubuntu
 #  user:
 #    name: ubuntu
+#    groups: sudonopass
+#    append: yes
 #    password: "!"
 #    shell: /bin/bash
 

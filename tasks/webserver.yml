@@ -10,21 +10,6 @@
   notify:
     - webRestart
 
-- name: Enable apache mods
-  apache2_module:
-    name: "{{ item }}"
-    state: present
-  loop:
-    - proxy_fcgi
-    - rewrite
-    - expires
-    - headers
-    - deflate
-    - dir
-    - ssl
-  notify:
-    - webRestart
-
 - name: Enable php8.3-fpm Apache config using symlink
   file:
     src: /etc/apache2/conf-available/php8.3-fpm.conf
@@ -48,10 +33,26 @@
     group: squad
     recurse: true
 
+- name: Enable apache mods
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - proxy_fcgi
+    - rewrite
+    - expires
+    - headers
+    - deflate
+    - dir
+    - ssl
+  notify:
+    - webRestart
+
 - name: certbot
   apt:
     pkg:
       - certbot
+      - python3-certbot-apache
 
 - name: start/enable apache2.service
   systemd:

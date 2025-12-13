@@ -21,14 +21,14 @@
         - apache2.service
         - php8.3-fpm.service
   vars_files:
-    - vault/user.yml
+    - vault/secrets.yml
   vars:
     LocalSSLCertificateFile: '/etc/ssl/certs/localhost.crt'
     LocalSSLCertificateKeyFile: '/etc/ssl/private/localhost.key'
     # SSLCertificateFile: '/etc/ssl/certs/localhost.crt'
     # SSLCertificateKeyFile: '/etc/ssl/private/localhost.key'
-    SSLCertificateFile: '/etc/letsencrypt/live/krazee.7cav.us/fullchain.pem'
-    SSLCertificateKeyFile: '/etc/letsencrypt/live/krazee.7cav.us/privkey.pem'
+    SSLCertificateFile: '/etc/letsencrypt/live/kleinman.7cav.us/fullchain.pem'
+    SSLCertificateKeyFile: '/etc/letsencrypt/live/kleinman.7cav.us/privkey.pem'
     documentRootPath: '/var/www/html/public'
   pre_tasks:
      - name: Update apt cache

@@ -53,6 +53,25 @@ new class($serverName, $quiet, $action, $args) {
         }
     }
 
+    public function listModsAction()
+    {
+        $configPath = "{$this->serverBasePath}/config.json";
+        $modsPath = "{$this->serverBasePath}/SquadGame/Plugins/Mods";
+        $downloadPath = "{$this->serverBasePath}/steamapps/workshop/content/393380";
+        $config = json_decode(file_get_contents($configPath), false, 512, JSON_THROW_ON_ERROR);
+        $_mods = $config->mods ?? null;
+        if (!is_array($_mods)) {
+            throw new Exception("missing key 'mods' in $configPath");
+        }
+        $mods = array_unique($this->resolveMods($_mods));
+        echo "pathDownload,pathTarget,modId,modName,installed\n";;
+        foreach ($this->collectModFolders($downloadPath, $mods) as $modInfo) {
+            $targetPath = "$modsPath/{$modInfo->modId}";
+            $isInstalled = (int)file_exists($targetPath) && (int)file_exists("$targetPath/{$modInfo->modName}.uplugin");
+            echo "{$modInfo->path},$targetPath,{$modInfo->modId},{$modInfo->modName},$isInstalled\n";
+        }
+    }
+
     public function updateAndRestartIfEmptyAction()
     {
         $wasRunning = $this->isServerActive();
@@ -226,10 +245,7 @@ new class($serverName, $quiet, $action, $args) {
 
     public function isServerActive(): bool
     {
-        return match ($this->exec(sprintf("/bin/systemctl is-active squad-%s.service", $this->serverName), false, false, false, true)) {
-            "active" => true,
-            "inactive" => false,
-        };
+        return "active" === $this->exec(sprintf("/bin/systemctl is-active squad-%s.service", $this->serverName), false, false, false, true);
     }
 
     public function isServerEmpty(): bool

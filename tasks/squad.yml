@@ -1,4 +1,16 @@
 ---
+- name: Copy /etc/sysctl.d/98-allow-ping.conf
+  copy:
+    src: files/etc/98-allow-ping.conf
+    dest: /etc/sysctl.d/98-allow-ping.conf
+    mode: 0644
+
+- name: Copy /etc/sysctl.d/98-disable-ipv6.conf
+  copy:
+    src: files/etc/98-disable-ipv6.conf
+    dest: /etc/sysctl.d/98-disable-ipv6.conf
+    mode: 0644
+
 - name: Create /opt/squad
   file:
     path: /opt/squad
